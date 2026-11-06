@@ -244,7 +244,7 @@ async function stream(system,user,max,onText){
   const c=cfg(),g=c.prov==='gemini';
   const url=g?`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse`:'https://api.anthropic.com/v1/messages';
   const headers=g?{'content-type':'application/json','x-goog-api-key':c.key}:{'content-type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
-  const body=g?{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{maxOutputTokens:max+1500,temperature:1}}
+  const body=g?{systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{maxOutputTokens:max+4000,temperature:1}}
              :{model:c.model,max_tokens:max,stream:true,system,messages:[{role:'user',content:user}]};
   const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
   if(!r.ok){let t='';try{const e=await r.json();t=e.error.message}catch(e){}
@@ -286,16 +286,23 @@ function intro(){
   ${S.players.map(card).join('')}
   <button class="pri" onclick="next(null)">ابدأ المغامرة</button>`;
 }
+function parseScene(full){
+  let i=full.indexOf('@@@'),k=3;
+  if(i<0){const m=full.search(/\{\s*"choices"/);if(m<0)throw 0;i=m;k=0}
+  const text=full.slice(0,i).replace(/```\w*/g,'').trim();
+  const m=full.slice(i+k).match(/\{[\s\S]*\}/);if(!m||!text)throw 0;
+  return{text,j:JSON.parse(m[0])}
+}
 async function next(choice){
   if(busy)return;busy=true;clearInterval(tmr);
   const prev=S.scene, prevCh=choice;
   $('app').innerHTML=`<h2>المشهد ${S.n+1}</h2><div class="tape"></div><div class="story" id="st"><span class="mut">الراوي بيجهز المشهد...</span></div>`;
   try{
-    const full=await stream(SYS,ctx(choice),900,t=>{const i=t.indexOf('@@@');$('st').textContent=(i<0?t:t.slice(0,i)).trim()});
-    const i=full.indexOf('@@@');if(i<0)throw new Error('رد غير مفهوم، جرّب تاني');
-    const text=full.slice(0,i).trim();
-    const m=full.slice(i+3).match(/\{[\s\S]*\}/);if(!m)throw new Error('رد غير مكتمل، جرّب تاني');
-    const j=JSON.parse(m[0]);
+    const cx=ctx(choice);let text='',j=null,full='';
+    for(let a=0;a<3&&!j;a++){
+      full=await stream(SYS,cx,1400,t=>{const i=t.indexOf('@@@');$('st').textContent=(i<0?t:t.slice(0,i)).replace(/```\w*/g,'').trim()});
+      try{const r=parseScene(full);text=r.text;j=r.j}catch(e){if(a==2)throw new Error('رد غير مفهوم من الذكاء الاصطناعي. بداية الرد: '+(full.slice(0,120)||'(فاضي)'))}
+    }
     apply(j);
     if(S.split){S.split.turns++;if(!j.split||S.split.turns>=4)S.split=null}
     const co=(j.choicesOut||[]).slice(0,4),ci=(j.choicesIn||[]).slice(0,4);
